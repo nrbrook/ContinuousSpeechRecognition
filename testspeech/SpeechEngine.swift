@@ -43,6 +43,7 @@ class SpeechEngine: NSObject {
                 DispatchQueue.main.async {
                     self.startTask()
                     self.startCapture()
+                    self.delegate?.speechEngineDidStart(speechEngine: self)
                 }
             case .denied:
                 fallthrough
