@@ -13,9 +13,11 @@ import AVFoundation
 
 protocol SpeechEngineDelegate: class {
     func speechEngineDidStart(speechEngine: SpeechEngine)
-    func speechEngine(speechEngine: SpeechEngine, didHypothesizeTranscription transcription: SFTranscription, withTranscriptionIdentifier identifier: UUID)
+    func speechEngine(_ speechEngine: SpeechEngine, didHypothesizeTranscription transcription: SFTranscription, withTranscriptionIdentifier identifier: UUID)
+    func speechEngine(_ speechEngine: SpeechEngine, didFinishTranscription transcription: SFTranscription, withTranscriptionIdentifier identifier: UUID)
 }
 
+@available(iOS 10.0, *)
 class SpeechEngine: NSObject {
     
     weak var delegate: SpeechEngineDelegate? = nil
@@ -26,6 +28,24 @@ class SpeechEngine: NSObject {
     fileprivate var recognitionTask: SFSpeechRecognitionTask?
     fileprivate var transcriptionIdentifier: UUID?
     
+    fileprivate var recognitionTimeoutTimer: Timer? {
+        didSet {
+            oldValue?.invalidate()
+        }
+    }
+    
+    var active: Bool = false {
+        didSet {
+            if active {
+                self.startRecognizer()
+            } else {
+                self.endRecognizer()
+            }
+        }
+    }
+    
+    var recognitionTimeout: TimeInterval = 1
+    
     fileprivate func startTask() {
         self.recognitionTask?.finish()
         self.transcriptionIdentifier = UUID()
@@ -33,7 +53,7 @@ class SpeechEngine: NSObject {
         self.recognitionTask = self.recognizer?.recognitionTask(with: self.speechRequest!, delegate: self)
     }
     
-    func startRecognizer() {
+    fileprivate func startRecognizer() {
         SFSpeechRecognizer.requestAuthorization { (status) in
             switch status {
             case .authorized:
@@ -56,15 +76,16 @@ class SpeechEngine: NSObject {
         
     }
     
-    func endRecognizer() {
+    fileprivate func endRecognizer() {
         print("Ending recognizer")
-        endCapture()
-        speechRequest?.endAudio()
+        self.endCapture()
+        self.speechRequest?.endAudio()
+        self.recognitionTask?.cancel()
     }
     
     private func startCapture() {
         print("Starting capture")
-        capture = AVCaptureSession()
+        self.capture = AVCaptureSession()
         
         guard let audioDev = AVCaptureDevice.defaultDevice(withMediaType: AVMediaTypeAudio) else {
             print("Could not get capture device.")
@@ -76,33 +97,33 @@ class SpeechEngine: NSObject {
             return
         }
         
-        guard true == capture?.canAddInput(audioIn) else {
+        guard self.capture!.canAddInput(audioIn) else {
             print("Could not add input device")
             return
         }
         
-        capture?.addInput(audioIn)
+        self.capture?.addInput(audioIn)
         
         let audioOut = AVCaptureAudioDataOutput()
         audioOut.setSampleBufferDelegate(self, queue: DispatchQueue.main)
         
-        guard true == capture?.canAddOutput(audioOut) else {
+        guard self.capture!.canAddOutput(audioOut) else {
             print("Could not add audio output")
             return
         }
         
-        capture?.addOutput(audioOut)
+        self.capture!.addOutput(audioOut)
         audioOut.connection(withMediaType: AVMediaTypeAudio)
-        capture?.startRunning()
+        self.capture!.startRunning()
         
         print("Capture running")
     }
     
     private func endCapture() {
-        print("Ended capture")
-        if true == capture?.isRunning {
-            capture?.stopRunning()
+        if true == self.capture?.isRunning {
+            self.capture?.stopRunning()
         }
+        print("Ended capture")
     }
 }
 
@@ -130,15 +151,19 @@ extension SpeechEngine: SFSpeechRecognitionTaskDelegate {
     
     func speechRecognitionTask(_ task: SFSpeechRecognitionTask, didHypothesizeTranscription transcription: SFTranscription) {
         print("Hypothesised) \(transcription)")
-        self.delegate?.speechEngine(speechEngine: self, didHypothesizeTranscription: transcription, withTranscriptionIdentifier: self.transcriptionIdentifier!)
+        self.delegate?.speechEngine(self, didHypothesizeTranscription: transcription, withTranscriptionIdentifier: self.transcriptionIdentifier!)
+        if self.recognitionTimeout > 0 {
+            self.recognitionTimeoutTimer = Timer.scheduledTimer(withTimeInterval: self.recognitionTimeout, repeats: false, block: { (timer) in
+                task.finish()
+            })
+        }
     }
     
     func speechRecognitionTask(_ task: SFSpeechRecognitionTask, didFinishRecognition recognitionResult: SFSpeechRecognitionResult) {
         print("Recognition result \(recognitionResult.bestTranscription)")
-        self.delegate?.speechEngine(speechEngine: self, didHypothesizeTranscription: transcription, withTranscriptionIdentifier: self.transcriptionIdentifier!)
-        
         
         if recognitionResult.isFinal {
+            self.delegate?.speechEngine(self, didFinishTranscription: recognitionResult.bestTranscription, withTranscriptionIdentifier: self.transcriptionIdentifier!)
             self.startTask()
         }
     }
