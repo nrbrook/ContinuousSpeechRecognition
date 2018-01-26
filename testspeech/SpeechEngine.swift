@@ -59,7 +59,7 @@ class SpeechEngine: NSObject {
             case .authorized:
                 print("Authorized, starting recognizer")
                 self.recognizer = SFSpeechRecognizer(locale: Locale.current)
-                print("Initial available: \(self.recognizer?.isAvailable)")
+                print("Initial available: \(self.recognizer?.isAvailable ?? false)")
                 DispatchQueue.main.async {
                     self.startTask()
                     self.startCapture()
@@ -87,7 +87,7 @@ class SpeechEngine: NSObject {
         print("Starting capture")
         self.capture = AVCaptureSession()
         
-        guard let audioDev = AVCaptureDevice.defaultDevice(withMediaType: AVMediaTypeAudio) else {
+        guard let audioDev = AVCaptureDevice.default(for: AVMediaType.audio) else {
             print("Could not get capture device.")
             return
         }
@@ -113,7 +113,7 @@ class SpeechEngine: NSObject {
         }
         
         self.capture!.addOutput(audioOut)
-        audioOut.connection(withMediaType: AVMediaTypeAudio)
+        audioOut.connection(with: AVMediaType.audio)
         self.capture!.startRunning()
         
         print("Capture running")
@@ -128,7 +128,7 @@ class SpeechEngine: NSObject {
 }
 
 extension SpeechEngine: AVCaptureAudioDataOutputSampleBufferDelegate {
-    func captureOutput(_ captureOutput: AVCaptureOutput!, didOutputSampleBuffer sampleBuffer: CMSampleBuffer!, from connection: AVCaptureConnection!) {
+    func captureOutput(_ captureOutput: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         self.speechRequest?.appendAudioSampleBuffer(sampleBuffer)
     }
     
